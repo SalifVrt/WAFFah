@@ -11,6 +11,6 @@ typedef struct {
     int is_active;       //1 if active, else 0
 } ConnectionState;
 
-ConnectionState connections[MAX_CLIENTS];
+void start_proxy(int local_port, const char* remote_ip, int remote_port);
 
 #endif
