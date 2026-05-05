@@ -1,3 +1,6 @@
+#ifndef PROXY_H
+#define PROXY_H
+
 #define MAX_CLIENTS 10
 #define BUFFER_SIZE 4096
 
@@ -9,3 +12,5 @@ typedef struct {
 } ConnectionState;
 
 ConnectionState connections[MAX_CLIENTS];
+
+#endif
