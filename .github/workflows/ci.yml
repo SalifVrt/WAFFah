@@ -1,0 +1,31 @@
+name: WAFFah C CI pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: code checkout (checkout)
+      uses: actions/checkout@v3
+
+    - name: install dependencies (gcc, make, clang-tools)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc make clang-format clang-tidy
+
+    - name: format verification (clang-format)
+      #Werror to crash if the format is not correct
+      #dry-run option to avoid modifying files
+      run: clang-format -i --Werror --dry-run src/*.c src/*.h
+
+    - name: static analysis (clang-tidy)
+      run: clang-tidy src/*.c -- -I src/
+
+    - name: compilation (make)
+      run: make
