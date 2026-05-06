@@ -1,9 +1,11 @@
 #include "proxy.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 static ConnectionState connections[MAX_CLIENTS];
@@ -50,8 +52,72 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
 
     printf("proxy listening on port %d...\n", local_port);
 
-    // temp loop for testing
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        connections[i].is_active = 0;
+    }
+
+    fd_set readfds;  // sockets to watch
+
     while (1) {
-        sleep(1);
+        FD_ZERO(&readfds);
+        FD_SET(server_fd, &readfds);
+
+        int max_sd = server_fd;
+
+        for (int i = 0; i < MAX_CLIENTS; i++) {
+            if (connections[i].is_active) {
+                FD_SET(connections[i].client_fd, &readfds);
+                if (connections[i].client_fd > max_sd)
+                    max_sd = connections[i].client_fd;
+            }
+        }
+
+        int activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
+        if (activity < 0) {
+            perror("error: select");
+            continue;
+        }
+
+        // new client wants to connect, we check server state
+        if (FD_ISSET(server_fd, &readfds)) {
+            int new_socket = accept(server_fd, NULL, NULL);
+            if (new_socket < 0) {
+                perror("error: accept connection");
+                continue;
+            }
+            printf("[+] new client connected.\n");
+
+            int i;
+            for (i = 0; i < MAX_CLIENTS; i++) {
+                if (!connections[i].is_active) {
+                    connections[i].client_fd = new_socket;
+                    connections[i].is_active = 1;
+                    break;
+                }
+            }
+            if (i == MAX_CLIENTS) close(new_socket);  // no space left
+        }
+
+        // existing client is communicating
+        for (int i = 0; i < MAX_CLIENTS; i++) {
+            if (connections[i].is_active &&
+                FD_ISSET(connections[i].client_fd,
+                         &readfds)) {  // check client state
+                char buffer[BUFFER_SIZE];
+
+                // read client message
+                int valread =
+                    read(connections[i].client_fd, buffer, BUFFER_SIZE - 1);
+
+                if (valread == 0) {  // client left
+                    printf("[-] client %d disconnected.\n", i);
+                    close(connections[i].client_fd);
+                    connections[i].is_active = 0;
+                } else if (valread > 0) {
+                    buffer[valread] = '\0';
+                    printf("\n--- REQUEST ---\n%s\n---------------\n", buffer);
+                }
+            }
+        }
     }
 }
