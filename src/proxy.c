@@ -11,158 +11,154 @@
 static ConnectionState connections[MAX_CLIENTS];
 
 int connect_to_server(const char* ip, int port) {
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) return -1;
+  int sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0) return -1;
 
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(port);
-    inet_pton(AF_INET, ip,
-              &server_addr.sin_addr);  // converts IP to binary format
+  struct sockaddr_in server_addr;
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_port = htons(port);
+  inet_pton(AF_INET, ip,
+            &server_addr.sin_addr);  // converts IP to binary format
 
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) <
-        0) {
-        close(sock);
-        return -1;
-    }
-    return sock;  // returns real server's fd
+  if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    close(sock);
+    return -1;
+  }
+  return sock;  // returns real server's fd
 }
 
 void start_proxy(int local_port, const char* remote_ip, int remote_port) {
-    /*(void)local_port; (void)remote_ip; (void)remote_port; //only for warnings,
-    will delete later
+  /*(void)local_port; (void)remote_ip; (void)remote_port; //only for warnings,
+  will delete later
 
-    printf("proxy will be coming soon !\n");*/
+  printf("proxy will be coming soon !\n");*/
 
-    int server_fd;
-    struct sockaddr_in address;
+  int server_fd;
+  struct sockaddr_in address;
 
-    // socket opening
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+  // socket opening
+  server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
-    if (server_fd < 0) {
-        perror("error: socket creation");
-        exit(EXIT_FAILURE);
-    }
+  if (server_fd < 0) {
+    perror("error: socket creation");
+    exit(EXIT_FAILURE);
+  }
 
-    // to avoid "address already in use" when relaunching program
-    int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  // to avoid "address already in use" when relaunching program
+  int opt = 1;
+  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    // preparing ip address and port
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(local_port);
+  // preparing ip address and port
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = INADDR_ANY;
+  address.sin_port = htons(local_port);
 
-    // binding
-    int ret_bind = bind(server_fd, (struct sockaddr*)&address, sizeof(address));
-    if (ret_bind < 0) {
-        perror("error: socket binding");
-        exit(EXIT_FAILURE);
-    }
+  // binding
+  int ret_bind = bind(server_fd, (struct sockaddr*)&address, sizeof(address));
+  if (ret_bind < 0) {
+    perror("error: socket binding");
+    exit(EXIT_FAILURE);
+  }
 
-    // listening
-    int ret_listen = listen(server_fd, MAX_CLIENTS);
-    if (ret_listen < 0) {
-        perror("error: socket listening");
-        exit(EXIT_FAILURE);
-    }
+  // listening
+  int ret_listen = listen(server_fd, MAX_CLIENTS);
+  if (ret_listen < 0) {
+    perror("error: socket listening");
+    exit(EXIT_FAILURE);
+  }
 
-    printf("proxy listening on port %d...\n", local_port);
+  printf("proxy listening on port %d...\n", local_port);
+
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    connections[i].is_active = 0;
+  }
+
+  fd_set readfds;  // sockets to watch
+
+  while (1) {
+    FD_ZERO(&readfds);
+    FD_SET(server_fd, &readfds);
+
+    int max_sd = server_fd;
 
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        connections[i].is_active = 0;
+      if (connections[i].is_active) {
+        FD_SET(connections[i].client_fd, &readfds);
+        if (connections[i].client_fd > max_sd)
+          max_sd = connections[i].client_fd;
+        FD_SET(connections[i].server_fd, &readfds);
+        if (connections[i].server_fd > max_sd)
+          max_sd = connections[i].server_fd;
+      }
     }
 
-    fd_set readfds;  // sockets to watch
-
-    while (1) {
-        FD_ZERO(&readfds);
-        FD_SET(server_fd, &readfds);
-
-        int max_sd = server_fd;
-
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (connections[i].is_active) {
-                FD_SET(connections[i].client_fd, &readfds);
-                if (connections[i].client_fd > max_sd)
-                    max_sd = connections[i].client_fd;
-                FD_SET(connections[i].server_fd, &readfds);
-                if (connections[i].server_fd > max_sd)
-                    max_sd = connections[i].server_fd;
-            }
-        }
-
-        int activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
-        if (activity < 0) {
-            perror("error: select");
-            continue;
-        }
-
-        // new client wants to connect, we check server state
-        if (FD_ISSET(server_fd, &readfds)) {
-            int new_socket = accept(server_fd, NULL, NULL);
-            if (new_socket < 0) {
-                perror("error: accept connection");
-                continue;
-            }
-            printf("[+] new client connected.\n");
-
-            int i;
-            for (i = 0; i < MAX_CLIENTS; i++) {
-                if (!connections[i].is_active) {
-                    connections[i].client_fd = new_socket;
-                    connections[i].is_active = 1;
-                    connections[i].server_fd =
-                        connect_to_server(remote_ip, remote_port);
-                    if (connections[i].server_fd < 0) {
-                        printf("[-] server unreachable, rejecting client.\n");
-                        close(new_socket);
-                        connections[i].is_active = 0;
-                    }
-                    break;
-                }
-            }
-            if (i == MAX_CLIENTS) close(new_socket);  // no space left
-        }
-
-        // existing client is communicating
-        for (int i = 0; i < MAX_CLIENTS; i++) {
-            if (connections[i].is_active &&
-                FD_ISSET(connections[i].client_fd,
-                         &readfds)) {  // check client state
-                char buffer[BUFFER_SIZE];
-
-                // read client message
-                int valread =
-                    read(connections[i].client_fd, buffer, BUFFER_SIZE - 1);
-
-                if (valread == 0) {  // client left
-                    printf("[-] client %d disconnected.\n", i);
-                    close(connections[i].client_fd);
-                    close(connections[i].server_fd);
-                    connections[i].is_active = 0;
-                } else if (valread > 0) {
-                    buffer[valread] = '\0';
-                    printf("\n--- REQUEST ---\n%s\n---------------\n", buffer);
-                    send(connections[i].server_fd, buffer, valread, 0);
-                }
-            }
-
-            if (connections[i].is_active &&
-                FD_ISSET(connections[i].server_fd, &readfds)) {
-                char buffer[BUFFER_SIZE];
-                int valread =
-                    read(connections[i].server_fd, buffer, BUFFER_SIZE - 1);
-                if (valread == 0) {
-                    printf("[-] server backend finished. (slot %d)\n", i);
-                    close(connections[i].client_fd);
-                    close(connections[i].server_fd);
-                    connections[i].is_active = 0;
-                } else if (valread > 0) {
-                    send(connections[i].client_fd, buffer, valread, 0);
-                }
-            }
-        }
+    int activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
+    if (activity < 0) {
+      perror("error: select");
+      continue;
     }
+
+    // new client wants to connect, we check server state
+    if (FD_ISSET(server_fd, &readfds)) {
+      int new_socket = accept(server_fd, NULL, NULL);
+      if (new_socket < 0) {
+        perror("error: accept connection");
+        continue;
+      }
+      printf("[+] new client connected.\n");
+
+      int i;
+      for (i = 0; i < MAX_CLIENTS; i++) {
+        if (!connections[i].is_active) {
+          connections[i].client_fd = new_socket;
+          connections[i].is_active = 1;
+          connections[i].server_fd = connect_to_server(remote_ip, remote_port);
+          if (connections[i].server_fd < 0) {
+            printf("[-] server unreachable, rejecting client.\n");
+            close(new_socket);
+            connections[i].is_active = 0;
+          }
+          break;
+        }
+      }
+      if (i == MAX_CLIENTS) close(new_socket);  // no space left
+    }
+
+    // existing client is communicating
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+      if (connections[i].is_active &&
+          FD_ISSET(connections[i].client_fd,
+                   &readfds)) {  // check client state
+        char buffer[BUFFER_SIZE];
+
+        // read client message
+        int valread = read(connections[i].client_fd, buffer, BUFFER_SIZE - 1);
+
+        if (valread == 0) {  // client left
+          printf("[-] client %d disconnected.\n", i);
+          close(connections[i].client_fd);
+          close(connections[i].server_fd);
+          connections[i].is_active = 0;
+        } else if (valread > 0) {
+          buffer[valread] = '\0';
+          printf("\n--- REQUEST ---\n%s\n---------------\n", buffer);
+          send(connections[i].server_fd, buffer, valread, 0);
+        }
+      }
+
+      if (connections[i].is_active &&
+          FD_ISSET(connections[i].server_fd, &readfds)) {
+        char buffer[BUFFER_SIZE];
+        int valread = read(connections[i].server_fd, buffer, BUFFER_SIZE - 1);
+        if (valread == 0) {
+          printf("[-] server backend finished. (slot %d)\n", i);
+          close(connections[i].client_fd);
+          close(connections[i].server_fd);
+          connections[i].is_active = 0;
+        } else if (valread > 0) {
+          send(connections[i].client_fd, buffer, valread, 0);
+        }
+      }
+    }
+  }
 }
