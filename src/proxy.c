@@ -10,6 +10,24 @@
 
 static ConnectionState connections[MAX_CLIENTS];
 
+int connect_to_server(const char* ip, int port) {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return -1;
+
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    inet_pton(AF_INET, ip,
+              &server_addr.sin_addr);  // converts IP to binary format
+
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) <
+        0) {
+        close(sock);
+        return -1;
+    }
+    return sock;  // returns real server's fd
+}
+
 void start_proxy(int local_port, const char* remote_ip, int remote_port) {
     /*(void)local_port; (void)remote_ip; (void)remote_port; //only for warnings,
     will delete later
@@ -69,6 +87,9 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
                 FD_SET(connections[i].client_fd, &readfds);
                 if (connections[i].client_fd > max_sd)
                     max_sd = connections[i].client_fd;
+                FD_SET(connections[i].server_fd, &readfds);
+                if (connections[i].server_fd > max_sd)
+                    max_sd = connections[i].server_fd;
             }
         }
 
@@ -92,6 +113,13 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
                 if (!connections[i].is_active) {
                     connections[i].client_fd = new_socket;
                     connections[i].is_active = 1;
+                    connections[i].server_fd =
+                        connect_to_server(remote_ip, remote_port);
+                    if (connections[i].server_fd < 0) {
+                        printf("[-] server unreachable, rejecting client.\n");
+                        close(new_socket);
+                        connections[i].is_active = 0;
+                    }
                     break;
                 }
             }
@@ -112,10 +140,27 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
                 if (valread == 0) {  // client left
                     printf("[-] client %d disconnected.\n", i);
                     close(connections[i].client_fd);
+                    close(connections[i].server_fd);
                     connections[i].is_active = 0;
                 } else if (valread > 0) {
                     buffer[valread] = '\0';
                     printf("\n--- REQUEST ---\n%s\n---------------\n", buffer);
+                    send(connections[i].server_fd, buffer, valread, 0);
+                }
+            }
+
+            if (connections[i].is_active &&
+                FD_ISSET(connections[i].server_fd, &readfds)) {
+                char buffer[BUFFER_SIZE];
+                int valread =
+                    read(connections[i].server_fd, buffer, BUFFER_SIZE - 1);
+                if (valread == 0) {
+                    printf("[-] server backend finished. (slot %d)\n", i);
+                    close(connections[i].client_fd);
+                    close(connections[i].server_fd);
+                    connections[i].is_active = 0;
+                } else if (valread > 0) {
+                    send(connections[i].client_fd, buffer, valread, 0);
                 }
             }
         }

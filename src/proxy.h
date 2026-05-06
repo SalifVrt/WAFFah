@@ -11,6 +11,7 @@ typedef struct {
     int is_active;  // 1 if active, else 0
 } ConnectionState;
 
+int connect_to_server(const char* ip, int port);
 void start_proxy(int local_port, const char* remote_ip, int remote_port);
 
 #endif
