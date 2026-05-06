@@ -1,6 +1,8 @@
 #ifndef PROXY_H
 #define PROXY_H
 
+#include <arpa/inet.h>
+
 #define MAX_CLIENTS 10
 #define BUFFER_SIZE 4096
 
@@ -9,6 +11,7 @@ typedef struct {
   int client_fd;
   int server_fd;  // socket to localhost:8080
   int is_active;  // 1 if active, else 0
+  char client_ip[INET_ADDRSTRLEN];
 } ConnectionState;
 
 int connect_to_server(const char* ip, int port);

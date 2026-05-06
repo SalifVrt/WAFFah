@@ -8,6 +8,7 @@
 #include <sys/select.h>
 #include <unistd.h>
 
+#include "logger.h"
 #include "waf.h"
 
 static ConnectionState connections[MAX_CLIENTS];
@@ -102,7 +103,11 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
 
     // new client wants to connect, we check server state
     if (FD_ISSET(server_fd, &readfds)) {
-      int new_socket = accept(server_fd, NULL, NULL);
+      struct sockaddr_in client_addr;  // to store client info
+      socklen_t client_len = sizeof(client_addr);
+
+      int new_socket =
+          accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
       if (new_socket < 0) {
         perror("error: accept connection");
         continue;
@@ -114,6 +119,10 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
         if (!connections[i].is_active) {
           connections[i].client_fd = new_socket;
           connections[i].is_active = 1;
+
+          inet_ntop(AF_INET, &client_addr.sin_addr, connections[i].client_ip,
+                    INET_ADDRSTRLEN);
+
           connections[i].server_fd = connect_to_server(remote_ip, remote_port);
           if (connections[i].server_fd < 0) {
             printf("[-] server unreachable, rejecting client.\n");
@@ -144,8 +153,16 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
         } else if (valread > 0) {
           buffer[valread] = '\0';
           printf("\n--- REQUEST ---\n%s\n---------------\n", buffer);
+
+          char first_line[256];
+          sscanf(buffer, "%255[^\r\n]", first_line);
+
+          url_decode(first_line);
+
           if (inspect_request(buffer) == 0) {  // attack detected
             printf("BLOCKED BY WAF. (slot %d)\n", i);
+
+            log_transaction(connections[i].client_ip, first_line, 1);
 
             // http response
             const char* forbidden_response =
@@ -159,7 +176,10 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
             close(connections[i].client_fd);
             close(connections[i].server_fd);
             connections[i].is_active = 0;
+
           } else {  // clean request
+            log_transaction(connections[i].client_ip, first_line, 0);
+
             send(connections[i].server_fd, buffer, valread, 0);
           }
         }
