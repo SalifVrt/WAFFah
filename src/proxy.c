@@ -1,4 +1,5 @@
 #include "proxy.h"
+#include "waf.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -142,7 +143,24 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
         } else if (valread > 0) {
           buffer[valread] = '\0';
           printf("\n--- REQUEST ---\n%s\n---------------\n", buffer);
-          send(connections[i].server_fd, buffer, valread, 0);
+          if (inspect_request(buffer) == 0){ //attack detected
+            printf("BLOCKED BY WAF. (slot %d)\n", i);
+
+            //http response
+            const char *forbidden_response =
+                            "HTTP/1.1 403 Forbidden\r\n"
+                            "Content-Type: text/html\r\n"
+                            "Connection: close\r\n\r\n"
+                            "<h1>403 Forbidden - Blocked by WAF</h1>";
+            send(connections[i].client_fd, forbidden_response, strlen(forbidden_response), 0);
+
+            close(connections[i].client_fd);
+            close(connections[i].server_fd);
+            connections[i].is_active = 0;
+          }
+          else { //clean request
+            send(connections[i].server_fd, buffer, valread, 0);
+          }
         }
       }
 
