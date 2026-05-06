@@ -29,22 +29,35 @@ void url_decode(char* str) {
 }
 
 int inspect_request(const char* request) {
-  // signatures to detect
-  const char* xss = "<script>";
-  const char* sqli = "OR 1=1";
-  const char* lfi = "../";
+  char decoded_request[4096];  // request copy to avoid changing the original
+  strncpy(decoded_request, request, sizeof(decoded_request) - 1);
+  decoded_request[sizeof(decoded_request) - 1] = '\0';
 
-  if (strstr(request, xss)) {
-    printf("XSS attack detected.\n");
-    return 0;
+  url_decode(decoded_request);
+
+  // blacklist definition
+  const char* bad_payloads[] = {
+      "<script>", "javascript:", "onerror=",      // XSS attacks
+      "OR 1=1",   "DROP TABLE",  "UNION SELECT",  // SQL injections
+      "../",      "/etc/passwd", "cmd.exe",       // LFI / path traversal
+      NULL};
+
+  const char* bad_urls[] = {"/admin", "/phpmyadmin",
+                            "/.env",  // forbidden access
+                            NULL};
+
+  for (int i = 0; bad_payloads[i] != NULL; i++) {
+    if (strstr(decoded_request, bad_payloads[i])) {
+      printf("ATTACK DETECTED: %s\n", bad_payloads[i]);
+      return 0;
+    }
   }
-  if (strstr(request, sqli)) {
-    printf("SQL injection attack detected.\n");
-    return 0;
-  }
-  if (strstr(request, lfi)) {
-    printf("Path Traversal (LFI) attack detected.\n");
-    return 0;
+
+  for (int i = 0; bad_urls[i] != NULL; i++) {
+    if (strstr(decoded_request, bad_urls[i])) {
+      printf("ATTACK DETECTED: %s\n", bad_urls[i]);
+      return 0;
+    }
   }
 
   return 1;
