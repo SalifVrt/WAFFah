@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-and-lint:
+  build_lint_test:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,5 +27,20 @@ jobs:
     - name: static analysis (clang-tidy)
       run: clang-tidy src/*.c -- -I src/
 
-    - name: compilation (make)
+    - name: build project
       run: make
+
+    - name: testing
+      run: |
+        #start backend in background
+        mkdir -p fake_serv && echo "Clean page" > fake_serv/index.html
+        cd fake_serv && python3 -m http.server 8080 &
+        cd ..
+        
+        # start the WAF Proxy in background
+        ./waffah_bin 8888 127.0.0.1 8080 &
+        
+        sleep 3
+        
+        # run the Python test suite
+        python3 tests/test_suite.py
