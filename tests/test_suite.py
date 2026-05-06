@@ -22,18 +22,25 @@ def run_tests():
     print("-" * 60)
     
     passed_count = 0
+    session = requests.Session()
     
     for name, path, expected_code in test_cases:
         try:
-            url = PROXY_URL + path
-            # We set a timeout to ensure the test script doesn't hang
-            response = requests.get(url, timeout=5)
+            target_url = PROXY_URL + path
+            
+            # Using prepared requests to bypass automatic URL normalization
+            # This ensures paths like ../ are sent exactly as written
+            req = requests.Request('GET', target_url)
+            prepped = session.prepare_request(req)
+            prepped.url = target_url 
+            
+            response = session.send(prepped, timeout=5)
             
             if response.status_code == expected_code:
-                print(f"✅ [PASSED] {name}")
+                print(f"[PASSED] {name}")
                 passed_count += 1
             else:
-                print(f"❌ [FAILED] {name}")
+                print(f"[FAILED] {name}")
                 print(f"    -> Expected: {expected_code}")
                 print(f"    -> Received: {response.status_code}")
                 

@@ -35,7 +35,6 @@ jobs:
         #start backend in background
         mkdir -p fake_serv && echo "Clean page" > fake_serv/index.html
         cd fake_serv && python3 -m http.server 8080 &
-        cd ..
         
         # start the WAF Proxy in background
         ./waffah_bin 8888 127.0.0.1 8080 &
