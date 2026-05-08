@@ -57,6 +57,12 @@ The repository includes an automated Python test suite to verify routing, dynami
 python3 tests/test_suite.py
 ```
 
+It includes as well a load test, to verify proxy's behavior with multiple simultaneous clients.
+
+```bash
+python3 tests/tests_concurrency.py
+```
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
