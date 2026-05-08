@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,14 @@
 #include "logger.h"
 #include "waf.h"
 
+static volatile int keep_running = 1;
 static ConnectionState connections[MAX_CLIENTS];
+
+void handle_sigint(int sig) {
+  (void)sig;  // prevent unused parameter warning
+  printf("\n[!] SIGINT received. shutting down waffah...\n");
+  keep_running = 0;
+}
 
 int connect_to_server(const char* ip, int port) {
   int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -31,11 +39,6 @@ int connect_to_server(const char* ip, int port) {
 }
 
 void start_proxy(int local_port, const char* remote_ip, int remote_port) {
-  /*(void)local_port; (void)remote_ip; (void)remote_port; //only for warnings,
-  will delete later
-
-  printf("proxy will be coming soon !\n");*/
-
   int server_fd;
   struct sockaddr_in address;
 
@@ -78,7 +81,9 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
 
   fd_set readfds;  // sockets to watch
 
-  while (1) {
+  signal(SIGINT, handle_sigint);  // to shutdown properly
+
+  while (keep_running) {
     FD_ZERO(&readfds);
     FD_SET(server_fd, &readfds);
 
@@ -97,6 +102,10 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
 
     int activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
     if (activity < 0) {
+      if (errno == EINTR) {  // to avoid showing error on shutdown
+                             // (interruption)
+        continue;
+      }
       perror("error: select");
       continue;
     }
@@ -200,4 +209,18 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
       }
     }
   }
+
+  // SHUTDOWN SEQUENCE
+  printf("[*] closing main server socket.\n");
+  close(server_fd);
+
+  // close all active connections
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (connections[i].is_active) {
+      printf("[*] closing connection for slot %d.\n", i);
+      close(connections[i].client_fd);
+      close(connections[i].server_fd);
+    }
+  }
+  printf("[*] waffah shutdown complete.\n");
 }
