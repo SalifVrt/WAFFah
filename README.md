@@ -6,8 +6,8 @@ WAFFah sits between a client and a backend server, intercepting traffic to detec
 
 ## Features
 
-* **Asynchronous I/O:** Utilizes `select()` to multiplex multiple simultaneous client connections without the overhead of threading.
-* **Dynamic Memory Allocation:** Safely handles exceptionally large HTTP requests and headers through dynamic buffer reallocation (`realloc`).
+* **Asynchronous I/O:** Uses `select()` to multiplex multiple simultaneous client connections without the overhead of threading.
+* **Dynamic Memory Allocation:** Safely handles large HTTP requests and headers through dynamic buffer reallocation (`realloc`).
 * **Traffic Inspection:** Decodes URL-encoded payloads and scans for malicious signatures:
   * Cross-Site Scripting (XSS)
   * SQL Injection (SQLi)
@@ -26,7 +26,7 @@ WAFFah sits between a client and a backend server, intercepting traffic to detec
 Clone the repository and compile the binary using the provided Makefile:
 
 ```bash
-git clone [https://github.com/SalifVrt/waffah.git](https://github.com/SalifVrt/waffah.git)
+git clone https://github.com/SalifVrt/waffah.git
 cd waffah
 make
 ```
