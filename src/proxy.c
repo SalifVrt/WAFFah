@@ -149,62 +149,147 @@ void start_proxy(int local_port, const char* remote_ip, int remote_port) {
       if (connections[i].is_active &&
           FD_ISSET(connections[i].client_fd,
                    &readfds)) {  // check client state
-        char buffer[BUFFER_SIZE];
+        int capacity = 4096;     // prepare dynamic buffer
+        int total_bytes = 0;
+        char* buffer = malloc(capacity);
 
-        // read client message
-        int valread = read(connections[i].client_fd, buffer, BUFFER_SIZE - 1);
+        if (!buffer) {
+          perror("error: malloc");
+          continue;
+        }
 
-        if (valread == 0) {  // client left
-          printf("[-] client %d disconnected.\n", i);
-          close(connections[i].client_fd);
-          close(connections[i].server_fd);
-          connections[i].is_active = 0;
-        } else if (valread > 0) {
-          buffer[valread] = '\0';
-          printf("\n--- REQUEST ---\n%s\n---------------\n", buffer);
+        // we read all the request
+        while (1) {
+          int bytes_read = recv(connections[i].client_fd, buffer + total_bytes,
+                                capacity - total_bytes - 1, MSG_DONTWAIT);
 
-          char first_line[256];
-          sscanf(buffer, "%255[^\r\n]", first_line);
+          if (bytes_read > 0) {
+            total_bytes += bytes_read;
 
-          url_decode(first_line);
+            // if reaching limit, we double buffer size
+            if (total_bytes >= capacity - 1) {
+              capacity *= 2;
+              char* new_buffer = realloc(buffer, capacity);
+              if (!new_buffer) {
+                perror("error: realloc");
+                free(buffer);
+                buffer = NULL;
+                break;
+              }
+              buffer = new_buffer;
+            }
+          } else if (bytes_read == 0) {
+            // client closed connection
+            break;
+          } else {
+            // bytes_read < 0
+            // EAGAIN or EWOULDBLOCK means empty pipe
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+              break;
+            } else {
+              perror("error: recv from client");
+              free(buffer);
+              buffer = NULL;
+              total_bytes = -1;
+              break;
+            }
+          }
+        }
 
-          if (inspect_request(buffer) == 0) {  // attack detected
-            printf("BLOCKED BY WAF. (slot %d)\n", i);
-
-            log_transaction(connections[i].client_ip, first_line, 1);
-
-            // http response
-            const char* forbidden_response =
-                "HTTP/1.1 403 Forbidden\r\n"
-                "Content-Type: text/html\r\n"
-                "Connection: close\r\n\r\n"
-                "<h1>403 Forbidden - Blocked by WAF</h1>";
-            send(connections[i].client_fd, forbidden_response,
-                 strlen(forbidden_response), 0);
-
+        // processing read data
+        if (buffer != NULL) {
+          if (total_bytes == 0) {
+            printf("[-] client %d disconnected.\n", i);
             close(connections[i].client_fd);
             close(connections[i].server_fd);
             connections[i].is_active = 0;
+          } else if (total_bytes > 0) {
+            buffer[total_bytes] = '\0';
+            printf("\n--- REQUEST RECEIVED ---\n%s\n------------------------\n",
+                   buffer);
 
-          } else {  // clean request
-            log_transaction(connections[i].client_ip, first_line, 0);
+            char first_line[256];
+            sscanf(buffer, "%255[^\r\n]", first_line);
+            url_decode(first_line);
 
-            send(connections[i].server_fd, buffer, valread, 0);
+            if (inspect_request(buffer) == 0) {  // attack detected
+              printf("BLOCKED BY WAF. (slot %d)\n", i);
+              log_transaction(connections[i].client_ip, first_line, 1);
+
+              const char* forbidden_response =
+                  "HTTP/1.1 403 Forbidden\r\n"
+                  "Content-Type: text/html\r\n"
+                  "Connection: close\r\n\r\n"
+                  "<h1>403 Forbidden - Blocked by WAF</h1>";
+              send(connections[i].client_fd, forbidden_response,
+                   strlen(forbidden_response), 0);
+
+              close(connections[i].client_fd);
+              close(connections[i].server_fd);
+              connections[i].is_active = 0;
+            } else {  // clean request
+              log_transaction(connections[i].client_ip, first_line, 0);
+              send(connections[i].server_fd, buffer, total_bytes, 0);
+            }
           }
+          free(buffer);
         }
       }
 
       if (connections[i].is_active &&
           FD_ISSET(connections[i].server_fd, &readfds)) {
-        char buffer[BUFFER_SIZE];
-        int valread = read(connections[i].server_fd, buffer, BUFFER_SIZE - 1);
-        if (valread == 0) {
-          printf("[-] server backend finished. (slot %d)\n", i);
-          close(connections[i].client_fd);
-          close(connections[i].server_fd);
-          connections[i].is_active = 0;
-        } else if (valread > 0) {
-          send(connections[i].client_fd, buffer, valread, 0);
+        int capacity = 4096;
+        int total_bytes = 0;
+        char* buffer = malloc(capacity);
+
+        if (!buffer) {
+          perror("error: malloc");
+          continue;
+        }
+
+        while (1) {
+          int bytes_read = recv(connections[i].server_fd, buffer + total_bytes,
+                                capacity - total_bytes - 1, MSG_DONTWAIT);
+
+          if (bytes_read > 0) {
+            total_bytes += bytes_read;
+            if (total_bytes >= capacity - 1) {
+              capacity *= 2;
+              char* new_buffer = realloc(buffer, capacity);
+              if (!new_buffer) {
+                perror("error: realloc");
+                free(buffer);
+                buffer = NULL;
+                break;
+              }
+              buffer = new_buffer;
+            }
+          } else if (bytes_read == 0) {
+            break;
+          } else {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+              break;
+            } else {
+              perror("error: recv from server");
+              free(buffer);
+              buffer = NULL;
+              total_bytes = -1;
+              break;
+            }
+          }
+        }
+
+        if (buffer != NULL) {
+          if (total_bytes == 0) {
+            printf("[-] server backend finished. (slot %d)\n", i);
+            close(connections[i].client_fd);
+            close(connections[i].server_fd);
+            connections[i].is_active = 0;
+          } else if (total_bytes > 0) {
+            // send full content to the client
+            send(connections[i].client_fd, buffer, total_bytes, 0);
+          }
+          free(buffer);
         }
       }
     }
