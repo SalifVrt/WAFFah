@@ -9,7 +9,7 @@
 /**
  * @struct ConnectionState
  * @brief Stores the state of a client-server pair connection.
- * * Tracks the file descriptors for both the client and the backend server, 
+ * * Tracks the file descriptors for both the client and the backend server,
  * along with the client's IP and the active status of the slot.
  */
 typedef struct {
@@ -29,8 +29,8 @@ int connect_to_server(const char* ip, int port);
 
 /**
  * @brief Starts the asynchronous proxy server event loop.
- * * Initializes the listener, handles signal registration, and uses select() 
- * to multiplex I/O. It manages dynamic memory for requests and routes 
+ * * Initializes the listener, handles signal registration, and uses select()
+ * to multiplex I/O. It manages dynamic memory for requests and routes
  * data through the WAF engine.
  * * @param local_port The port the proxy listens on.
  * @param remote_ip The target backend IP address.

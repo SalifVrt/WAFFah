@@ -17,7 +17,7 @@ static ConnectionState connections[MAX_CLIENTS];
 
 /**
  * @brief Signal handler for clean application termination.
- * * Triggered by SIGINT (Ctrl+C). Sets the global loop flag to 0, 
+ * * Triggered by SIGINT (Ctrl+C). Sets the global loop flag to 0,
  * allowing the server to close all sockets and exit gracefully.
  * * @param sig The signal number.
  */

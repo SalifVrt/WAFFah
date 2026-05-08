@@ -5,7 +5,7 @@
 
 /**
  * @brief Application entry point.
- * * Parses command-line arguments to set the listening port and 
+ * * Parses command-line arguments to set the listening port and
  * initializes the WAFFah proxy server.
  * * @param argc Argument count.
  * @param argv Argument vector (optional port number).
