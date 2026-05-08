@@ -1,10 +1,10 @@
 import requests
 import sys
 
-# proxy running on this URL
+#waffah running on this URL
 PROXY_URL = "http://localhost:8888"
 
-# Test cases definition: (Test Name, URL Path, Expected HTTP Status Code)
+#test cases definition: (test name, URL path, expected http status code)
 test_cases = [
     ("Legitimate: Home page access", "/", 200),
     ("Legitimate: Standard search query", "/?search=books", 200),
@@ -18,18 +18,18 @@ test_cases = [
 ]
 
 def run_tests():
-    print(f"starting WAF functional test suite on {PROXY_URL}...")
+    print(f"Starting WAF functional test suite on {PROXY_URL}...")
     print("-" * 60)
     
     passed_count = 0
     session = requests.Session()
     
+    # run standard security tests
     for name, path, expected_code in test_cases:
         try:
             target_url = PROXY_URL + path
             
-            # Using prepared requests to bypass automatic URL normalization
-            # This ensures paths like ../ are sent exactly as written
+            #using prepared requests to bypass automatic URL normalization
             req = requests.Request('GET', target_url)
             prepped = session.prepare_request(req)
             prepped.url = target_url 
@@ -46,16 +46,40 @@ def run_tests():
                 
         except requests.exceptions.ConnectionError:
             print(f"[ERROR] {name}")
-            print(f"    -> Could not connect to proxy. Ensure it is running on {PROXY_URL}.")
+            print(f"    -> Could not connect to proxy. Ensure it is running.")
         except Exception as e:
             print(f"[ERROR] {name}")
             print(f"    -> An unexpected error occurred: {e}")
             
+    #run Dynamic Buffer Stress Test
     print("-" * 60)
-    print(f"FINAL RESULT: {passed_count}/{len(test_cases)} tests passed.")
+    print("Running Stress Test: Dynamic Buffer Reallocation...")
     
-    # Return non-zero exit code if any test failed (useful for CI pipeline)
-    if passed_count != len(test_cases):
+    stress_test_name = "Stress: Large HTTP Header (> 4096 bytes)"
+    try:
+        #we generate a 6000 character string to force the proxy to use realloc()
+        large_payload = "A" * 6000
+        headers = {"X-Large-Payload": large_payload}
+        
+        response = session.get(PROXY_URL + "/", headers=headers, timeout=5)
+        
+        #if we get a 200 OK, it means the proxy successfully reallocated 
+        # memory, read the whole request, and forwarded it without crashing.
+        if response.status_code == 200:
+            print(f"[PASSED] {stress_test_name}")
+            passed_count += 1
+        else:
+            print(f"[FAILED] {stress_test_name} (Got Status: {response.status_code})")
+    except Exception as e:
+         print(f"[ERROR] {stress_test_name}")
+         print(f"    -> Buffer crash or connection lost: {e}")
+
+    #final Results
+    total_tests = len(test_cases) + 1
+    print("-" * 60)
+    print(f"FINAL RESULT: {passed_count}/{total_tests} tests passed.")
+    
+    if passed_count != total_tests:
         sys.exit(1)
 
 if __name__ == "__main__":
