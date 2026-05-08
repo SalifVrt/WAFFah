@@ -1,3 +1,4 @@
 *.o
 mini_waf_bin
 *.log
+fake_serv/
