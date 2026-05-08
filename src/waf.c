@@ -5,6 +5,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * @brief Helper: Converts a hexadecimal character to its integer value.
+ * * @param c The hexadecimal character (0-9, a-f, A-F).
+ * @return The integer value (0-15), or 0 if the character is invalid.
+ */
 static int hex_to_int(char c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'a' && c <= 'f') return c - 'a' + 10;

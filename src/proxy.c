@@ -15,6 +15,12 @@
 static volatile int keep_running = 1;
 static ConnectionState connections[MAX_CLIENTS];
 
+/**
+ * @brief Signal handler for clean application termination.
+ * * Triggered by SIGINT (Ctrl+C). Sets the global loop flag to 0, 
+ * allowing the server to close all sockets and exit gracefully.
+ * * @param sig The signal number.
+ */
 void handle_sigint(int sig) {
   (void)sig;  // prevent unused parameter warning
   printf("\n[!] SIGINT received. shutting down waffah...\n");
